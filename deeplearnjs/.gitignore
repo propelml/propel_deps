@@ -1,0 +1,10 @@
+node_modules/
+demos/**/*.js
+demos/**/*.js.map
+!demos/playground/frame.js
+coverage/
+package-lock.json
+npm-debug.log
+.DS_Store
+dist/
+.idea/
