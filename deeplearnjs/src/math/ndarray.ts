@@ -36,7 +36,8 @@ export let TEXTURE_MANAGER: TextureManager = null;
 export enum DType {
   float32 = 'float32',
   int32 = 'int32',
-  bool = 'bool'
+  bool = 'bool',
+  uint8 = 'uint8',
 }
 
 /** @hidden */
@@ -44,6 +45,7 @@ export interface DataTypes {
   float32: Float32Array;
   int32: Int32Array;
   bool: Uint8Array;
+  uint8: Uint8Array;
 }
 
 /** @hidden */
@@ -949,6 +951,8 @@ function copyTypedArray<T extends keyof DataTypes>(
     return new Float32Array(array as number[]);
   } else if (dtype === 'int32') {
     return new Int32Array(array as number[]);
+  } else if (dtype === 'uint8') {
+    return new Uint8Array(array as number[]);
   } else if (dtype === 'bool') {
     const bool = new Uint8Array(array.length);
     for (let i = 0; i < bool.length; ++i) {
@@ -995,6 +999,8 @@ function makeZerosTypedArray<T extends keyof DataTypes>(
     return new Int32Array(size);
   } else if (dtype === 'bool') {
     return new Uint8Array(size);
+  } else if (dtype === 'uint8') {
+    return new Uint8Array(size);
   } else {
     throw new Error(`Unknown data type ${dtype}`);
   }
@@ -1018,7 +1024,7 @@ function float32ToTypedArray<T extends keyof DataTypes>(
     a: Float32Array, dtype: T): DataTypes[T] {
   if (dtype === 'float32') {
     return a;
-  } else if (dtype === 'int32' || dtype === 'bool') {
+  } else if (dtype === 'int32' || dtype === 'bool' || dtype === 'uint8') {
     const result = (dtype === 'int32') ? new Int32Array(a.length) :
                                          new Uint8Array(a.length);
     for (let i = 0; i < result.length; ++i) {

@@ -39,12 +39,12 @@ export class MathBackendCPU implements MathBackend {
 
   slice1D(input: Array1D, begin: number, size: number): Array1D {
     const newVals = input.getValues().slice(begin, begin + size);
-    return Array1D.new(newVals);
+    return Array1D.new(newVals, input.dtype);
   }
 
   slice2D(input: Array2D, begin: [number, number], size: [number, number]):
       Array2D {
-    const result = Array2D.zeros(size);
+    const result = Array2D.zeros(size, input.dtype);
     const [startI, startJ] = begin;
 
     for (let i = 0; i < size[0]; ++i) {
@@ -59,7 +59,7 @@ export class MathBackendCPU implements MathBackend {
   slice3D(input: Array3D, begin: [number, number, number], size: [
     number, number, number
   ]): Array3D {
-    const result = Array3D.zeros(size);
+    const result = Array3D.zeros(size, input.dtype);
     const [startI, startJ, startK] = begin;
 
     for (let i = 0; i < size[0]; ++i) {
@@ -75,7 +75,7 @@ export class MathBackendCPU implements MathBackend {
   slice4D(input: Array4D, begin: [number, number, number, number], size: [
     number, number, number, number
   ]): Array4D {
-    const result = Array4D.zeros(size);
+    const result = Array4D.zeros(size, input.dtype);
     const [startI, startJ, startK, startL] = begin;
 
     for (let i = 0; i < size[0]; ++i) {
