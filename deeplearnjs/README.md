@@ -48,9 +48,11 @@ console.log(result.dataSync());
 #### ES3/ES5 JavaScript
 
 You can also use **deeplearn.js** with plain JavaScript. Load the latest version
-of the library from [unpkg](https://unpkg.com):
+of the library from [jsDelivr](https://www.jsdelivr.com/) or [unpkg](https://unpkg.com):
 
 ```html
+<script src="https://cdn.jsdelivr.net/npm/deeplearn"></script>
+<!-- or -->
 <script src="https://unpkg.com/deeplearn"></script>
 ```
 
@@ -87,7 +89,8 @@ $ yarn prep # Installs dependencies.
 ```
 
 We recommend using [Visual Studio Code](https://code.visualstudio.com/) for
-development. Make sure to install [TSLint VSCode extension](https://marketplace.visualstudio.com/items?itemName=eg2.tslint) and the `clang-format` command line tool with the [Clang-Format VSCode extension](https://marketplace.visualstudio.com/items?itemName=xaver.clang-format) for auto-formatting.
+development. Make sure to install [TSLint VSCode extension](https://marketplace.visualstudio.com/items?itemName=eg2.tslint) and the `clang-format` command line tool with the [Clang-Format VSCode extension](https://marketplace.visualstudio.com/items?itemName=xaver.clang-format) for auto-formatting (Be sure to use the [NPM/Yarn clang-format binary](https://github.com/angular/clang-format)).
+
 
 To interactively develop any of the demos (e.g. `demos/nn-art/`):
 
@@ -139,10 +142,12 @@ To do a dry run and test building an npm package:
 
 ```bash
 $ ./scripts/build-npm.sh
->> Stored npm package at dist/deeplearn-VERSION.tgz
+...
+Stored standalone library at dist/deeplearn(.min).js
+deeplearn-VERSION.tgz
 ```
 
-To install it locally, run `npm install ./dist/deeplearn-VERSION.tgz`.
+To install it locally, run `npm install ./deeplearn-VERSION.tgz`.
 
 > On Windows, use bash (available through git) to use the scripts above.
 

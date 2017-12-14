@@ -17,27 +17,14 @@
 
 import {ENV} from '../environment';
 import * as util from '../util';
-import {ArrayData, TypedArray} from '../util';
-
-import {GPGPUContext} from './backends/webgl/gpgpu_context';
-import {TextureType} from './backends/webgl/tex_util';
-import {TextureManager} from './backends/webgl/texture_manager';
-import * as webgl_util from './backends/webgl/webgl_util';
+import {ArrayData} from '../util';
 import {RandNormalDataTypes} from './rand';
 import {MPRandGauss} from './rand';
-
-// These global variables need to be initialized to null so that closure knows
-// not to seal them.
-/** @hidden */
-export let GPGPU: GPGPUContext = null;
-/** @hidden */
-export let TEXTURE_MANAGER: TextureManager = null;
 
 export enum DType {
   float32 = 'float32',
   int32 = 'int32',
-  bool = 'bool',
-  uint8 = 'uint8',
+  bool = 'bool'
 }
 
 /** @hidden */
@@ -45,33 +32,18 @@ export interface DataTypes {
   float32: Float32Array;
   int32: Int32Array;
   bool: Uint8Array;
-  uint8: Uint8Array;
 }
 
 /** @hidden */
 export interface NDArrayData<T extends keyof DataTypes> {
+  id?: number;
   values?: DataTypes[T];
-  texture?: WebGLTexture;
-  /** [rows, columns] shape of the texture. */
-  textureShapeRC?: [number, number];
-  textureType?: TextureType;
-  isDisposed?: boolean;
-}
-
-/** @hidden */
-export function initializeGPU(
-    gpgpu: GPGPUContext, textureManager: TextureManager) {
-  GPGPU = gpgpu;
-  TEXTURE_MANAGER = textureManager;
-}
-
-function throwIfGPUNotInitialized() {
-  if (GPGPU == null || TEXTURE_MANAGER == null) {
-    throw new Error('GPU not intialized.');
-  }
 }
 
 export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
+  static nextId = 0;
+
+  id: number;
   /** The shape of the ndarray. */
   shape: number[];
   /** Number of elements in the ndarray. */
@@ -86,34 +58,16 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
    */
   protected strides: number[];
 
-  private ndarrayData: NDArrayData<T>;
-
-  protected constructor(shape: number[], data: NDArrayData<T>, dtype: T) {
-    // Sanity checks.
-    util.assert(
-        data.values != null || data.texture != null,
-        'Either `values` or `texture` must be defined');
-
-    util.assert(
-        data.texture == null || (data.textureShapeRC != null),
-        '`textureShape` must be defined when `texture` is defined');
-
+  protected constructor(
+      shape: number[], dtype: T, values?: DataTypes[T], id?: number) {
     this.size = util.sizeFromShape(shape);
-
-    if (data.values != null) {
+    if (values != null) {
       util.assert(
-          this.size === data.values.length,
+          this.size === values.length,
           `Constructing ndarray of shape (${this.size}) should match the ` +
-              `length of values (${data.values.length})`);
+              `length of values (${values.length})`);
     }
-
     this.shape = shape;
-
-    if (data.textureType == null) {
-      data.textureType = TextureType.DEFAULT;
-    }
-
-    this.ndarrayData = data;
     this.dtype = dtype || ('float32' as T);
     const dim = this.shape.length;
 
@@ -128,6 +82,19 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
         this.strides[i] = this.strides[i + 1] * this.shape[i + 1];
       }
     }
+    this.id = id;
+    if (this.id == null) {
+      this.id = NDArray.nextId++;
+      ENV.math.register(this);
+      ENV.math.write(this.id, values, this.dtype, this.shape);
+    }
+  }
+
+  /** Creates a ndarray of ones with the specified shape. */
+  static ones<T extends keyof DataTypes = keyof DataTypes>(
+      shape: number[], dtype?: T): NDArray<T> {
+    const values = makeOnesTypedArray(util.sizeFromShape(shape), dtype);
+    return NDArray.make(shape, {values}, dtype);
   }
 
   /** Creates a ndarray of zeros with the specified shape. */
@@ -135,6 +102,14 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
       shape: number[], dtype?: T): NDArray<T> {
     const values = makeZerosTypedArray(util.sizeFromShape(shape), dtype);
     return NDArray.make(shape, {values}, dtype);
+  }
+
+  /**
+   * Creates a ndarray of ones with the same shape as the specified ndarray.
+   */
+  static onesLike<G extends keyof DataTypes, T extends NDArray<G>>(another: T):
+      T {
+    return NDArray.ones(another.shape, another.dtype) as T;
   }
 
   /**
@@ -157,23 +132,23 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
    */
   static make<T extends keyof DataTypes = keyof DataTypes>(
       shape: number[], data: NDArrayData<T>, dtype?: T): NDArray<T> {
-    if (data.isDisposed) {
-      throw new Error(`Cannot make new NDArray from disposed NDArrayData.`);
-    }
     switch (shape.length) {
       case 0:
-        return new Scalar(data, dtype);
+        return new Scalar(shape, dtype, data.values, data.id);
       case 1:
-        return new Array1D(data, dtype);
+        return new Array1D(shape, dtype, data.values, data.id);
       case 2:
-        return new Array2D(shape as [number, number], data, dtype);
+        return new Array2D(
+            shape as [number, number], dtype, data.values, data.id);
       case 3:
-        return new Array3D(shape as [number, number, number], data, dtype);
+        return new Array3D(
+            shape as [number, number, number], dtype, data.values, data.id);
       case 4:
         return new Array4D(
-            shape as [number, number, number, number], data, dtype);
+            shape as [number, number, number, number], dtype, data.values,
+            data.id);
       default:
-        return new NDArray(shape, data, dtype);
+        return new NDArray(shape, dtype, data.values, data.id);
     }
   }
 
@@ -184,34 +159,30 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
       throw new Error(
           'Cannot construct NDArray with more than 4 channels from pixels.');
     }
+    const ndarrayData: NDArrayData<'int32'> = {};
     const shape: [number, number, number] =
         [pixels.height, pixels.width, numChannels];
-    const textureShapeRC: [number, number] = [shape[0], shape[1]];
-    const texture = TEXTURE_MANAGER.acquireTexture(textureShapeRC);
-    const textureType = TextureType.RGBA_COLOR;
-
-    GPGPU.uploadPixelDataToTexture(texture, pixels);
-
-    return Array3D.make<'int32'>(
-               shape, {texture, textureShapeRC, textureType}) as
-        Array3D<'int32'>;
+    const res = NDArray.make(shape, ndarrayData, 'int32') as Array3D<'int32'>;
+    ENV.math.writePixels(res.id, pixels, numChannels);
+    return res;
   }
 
   /** Reshapes the current ndarray into the provided shape. */
   reshape(newShape: number[]): NDArray<T> {
     this.throwIfDisposed();
-
     newShape = util.inferFromImplicitShape(newShape, this.size);
     if (util.arraysEqual(this.shape, newShape)) {
       // No-op.
       return this;
     }
 
+    const data: NDArrayData<T> = {id: this.id};
+
     util.assert(
         this.size === util.sizeFromShape(newShape),
         'new shape and old shape must have the same number of elements.');
 
-    return NDArray.make(newShape, this.ndarrayData, this.dtype);
+    return NDArray.make(newShape, data, this.dtype);
   }
 
   /**
@@ -220,6 +191,7 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
    * @returns {Array1D}
    */
   flatten(): Array1D<T> {
+    this.throwIfDisposed();
     if (this instanceof Array1D) {
       return this;
     }
@@ -227,44 +199,45 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
   }
 
   asScalar(): Scalar<T> {
+    this.throwIfDisposed();
     util.assert(this.size === 1, 'The array must have only 1 element.');
     return this.reshape([]);
   }
 
   as1D(): Array1D<T> {
+    this.throwIfDisposed();
     return this.reshape([this.size]) as Array1D<T>;
   }
 
   as2D(rows: number, columns: number): Array2D<T> {
+    this.throwIfDisposed();
     return this.reshape([rows, columns]) as Array2D<T>;
   }
 
   as3D(rows: number, columns: number, depth: number): Array3D<T> {
+    this.throwIfDisposed();
     return this.reshape([rows, columns, depth]) as Array3D<T>;
   }
 
   as4D(rows: number, columns: number, depth: number, depth2: number):
       Array4D<T> {
+    this.throwIfDisposed();
     return this.reshape([rows, columns, depth, depth2]) as Array4D<T>;
   }
 
   asType<G extends keyof DataTypes>(dtype: G): NDArray<G> {
     this.throwIfDisposed();
-
-    let newData: NDArrayData<T> = this.getData();
-    if (newData.values != null) {
-      newData = {values: toTypedArray(newData.values, dtype)};
-    }
-    return NDArray.make<G>(this.shape, newData, dtype);
+    // TODO(dsmilkov): Migrate casting to the backend.
+    const vals = this.dataSync();
+    const newVals = toTypedArray(vals, dtype);
+    return NDArray.make<G>(this.shape, {values: newVals}, dtype);
   }
 
   get rank(): number {
-    this.throwIfDisposed();
     return this.shape.length;
   }
 
   get(...locs: number[]) {
-    this.throwIfDisposed();
     let index = locs[locs.length - 1];
     for (let i = 0; i < locs.length - 1; ++i) {
       index += this.strides[i] * locs[i];
@@ -273,17 +246,23 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
   }
 
   add(value: number, ...locs: number[]) {
-    this.throwIfDisposed();
     this.set(this.get(...locs) + value, ...locs);
   }
 
   set(value: number, ...locs: number[]) {
     this.throwIfDisposed();
-    let index = locs[locs.length - 1];
+    util.assert(
+        locs.length === this.rank,
+        `The number of provided coordinates (${locs.length}) must ` +
+            `match the rank (${this.rank})`);
+    let index = locs.length > 0 ? locs[locs.length - 1] : 0;
     for (let i = 0; i < locs.length - 1; ++i) {
       index += this.strides[i] * locs[i];
     }
-    this.getValues()[index] = value;
+    const vals = this.getValues();
+    vals[index] = value;
+    ENV.math.disposeData(this.id);
+    ENV.math.write(this.id, vals, this.dtype, this.shape);
   }
 
   async val(...locs: number[]): Promise<number> {
@@ -293,6 +272,7 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
   }
 
   locToIndex(locs: number[]): number {
+    this.throwIfDisposed();
     let index = locs[locs.length - 1];
     for (let i = 0; i < locs.length - 1; ++i) {
       index += this.strides[i] * locs[i];
@@ -301,6 +281,7 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
   }
 
   indexToLoc(index: number): number[] {
+    this.throwIfDisposed();
     const locs: number[] = new Array(this.shape.length);
     for (let i = 0; i < locs.length - 1; ++i) {
       locs[i] = Math.floor(index / this.strides[i]);
@@ -312,11 +293,10 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
 
   fill(value: number) {
     this.throwIfDisposed();
-    this.getValues().fill(value);
-  }
-
-  getData(): NDArrayData<T> {
-    return this.ndarrayData;
+    const vals = this.getValues();
+    vals.fill(value);
+    ENV.math.disposeData(this.id);
+    ENV.math.write(this.id, vals, this.dtype, this.shape);
   }
 
   /** @deprecated Use dataSync() instead. */
@@ -335,27 +315,7 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
    */
   async data(): Promise<DataTypes[T]> {
     this.throwIfDisposed();
-    if (this.ndarrayData.values != null) {
-      return this.ndarrayData.values;
-    }
-
-    if (ENV.get('WEBGL_GET_BUFFER_SUB_DATA_ASYNC_EXTENSION_ENABLED') &&
-        this.ndarrayData.textureType === TextureType.DEFAULT) {
-      this.ndarrayData.values = await GPGPU.downloadMatrixFromTextureAsync(
-          this.ndarrayData.texture, this.ndarrayData.textureShapeRC[0],
-          this.ndarrayData.textureShapeRC[1]);
-      return this.ndarrayData.values;
-    }
-
-    if (!ENV.get('WEBGL_DISJOINT_QUERY_TIMER_EXTENSION_ENABLED')) {
-      return await this.dataSync();
-    }
-
-    // Construct an empty query. We're just interested in getting a callback
-    // when the GPU command queue has executed until this point in time.
-    const queryFn = () => {};
-    await GPGPU.runQuery(queryFn);
-    return this.dataSync();
+    return ENV.math.read(this.id);
   }
 
   /**
@@ -364,93 +324,12 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
    */
   dataSync(): DataTypes[T] {
     this.throwIfDisposed();
-    if (this.ndarrayData.values == null) {
-      throwIfGPUNotInitialized();
-
-      let values: Float32Array;
-      if (this.ndarrayData.textureType === TextureType.DEFAULT) {
-        values = GPGPU.downloadMatrixFromTexture(
-            this.ndarrayData.texture, this.ndarrayData.textureShapeRC[0],
-            this.ndarrayData.textureShapeRC[1]);
-      } else {
-        values = GPGPU.downloadMatrixFromRGBAColorTexture(
-            this.ndarrayData.texture, this.ndarrayData.textureShapeRC[0],
-            this.ndarrayData.textureShapeRC[1], this.shape[2]);
-      }
-
-      this.ndarrayData.values = float32ToTypedArray(values, this.dtype);
-
-      this.disposeTexture();
-    }
-    return this.ndarrayData.values;
-  }
-
-  private uploadToGPU() {
-    throwIfGPUNotInitialized();
-    this.throwIfDisposed();
-    this.ndarrayData.textureShapeRC =
-        webgl_util.getTextureShapeFromLogicalShape(GPGPU.gl, this.shape);
-    this.ndarrayData.texture =
-        TEXTURE_MANAGER.acquireTexture(this.ndarrayData.textureShapeRC);
-    this.ndarrayData.textureType = TextureType.DEFAULT;
-
-    GPGPU.uploadMatrixToTexture(
-        this.ndarrayData.texture, this.ndarrayData.textureShapeRC[0],
-        // TODO(smilkov): Propagate the original typed array to gpgpu.
-        this.ndarrayData.textureShapeRC[1],
-        typedArrayToFloat32(this.ndarrayData.values, this.dtype));
-
-    this.ndarrayData.values = null;
-  }
-
-  getTexture(): WebGLTexture {
-    this.throwIfDisposed();
-    if (this.ndarrayData.texture == null) {
-      this.uploadToGPU();
-    }
-    return this.ndarrayData.texture;
-  }
-
-  getTextureShapeRC(): [number, number] {
-    this.throwIfDisposed();
-    if (this.ndarrayData.textureShapeRC == null) {
-      this.uploadToGPU();
-    }
-    return this.ndarrayData.textureShapeRC;
-  }
-
-  private throwIfDisposed() {
-    if (this.ndarrayData.isDisposed) {
-      throw new Error(`NDArray is disposed.`);
-    }
+    return ENV.math.readSync(this.id);
   }
 
   dispose(): void {
-    this.ndarrayData.values = null;
-    this.shape = null;
-
-    // TODO(nsthorat): Construct an error and save the stack trace for debugging
-    // when in debug mode. Creating a stack trace is too expensive to do
-    // unconditionally.
-    this.ndarrayData.isDisposed = true;
-
-    if (this.ndarrayData.texture != null) {
-      this.disposeTexture();
-    }
-  }
-
-  private disposeTexture() {
-    throwIfGPUNotInitialized();
-    TEXTURE_MANAGER.releaseTexture(
-        this.ndarrayData.texture, this.ndarrayData.textureShapeRC);
-    this.ndarrayData.texture = null;
-    this.ndarrayData.textureShapeRC = null;
-    this.ndarrayData.textureType = null;
-  }
-
-  inGPU(): boolean {
-    this.throwIfDisposed();
-    return this.ndarrayData.texture != null;
+    this.isDisposed = true;
+    ENV.math.disposeData(this.id);
   }
 
   equals(t: NDArray<T>): boolean {
@@ -506,27 +385,22 @@ export class NDArray<T extends keyof DataTypes = keyof DataTypes> {
       shape: number[], a: number, b: number, dtype?: T): NDArray<T> {
     return NDArray.rand(shape, () => util.randUniform(a, b), dtype);
   }
+
+  private isDisposed = false;
+  private throwIfDisposed() {
+    if (this.isDisposed) {
+      throw new Error(`NDArray is disposed.`);
+    }
+  }
 }
 
 export class Scalar<T extends keyof DataTypes = keyof DataTypes> extends
     NDArray<T> {
-  constructor(data: NDArrayData<T>, dtype: T) {
-    if (data.texture != null) {
-      data.textureShapeRC = [1, 1];
-    }
-    super([], data, dtype);
-  }
-
   static new<T extends keyof DataTypes = keyof DataTypes>(
       value: number|boolean, dtype?: T) {
     const values = [value] as number[] | boolean[];
-    return new Scalar({values: toTypedArray(values, dtype)}, dtype);
+    return new Scalar([], dtype, toTypedArray(values, dtype));
   }
-
-  static ZERO = Scalar.new(0);
-  static ONE = Scalar.new(1);
-  static TWO = Scalar.new(2);
-  static NEG_ONE = Scalar.new(-1);
 
   get(): number {
     return this.getValues()[0];
@@ -535,10 +409,6 @@ export class Scalar<T extends keyof DataTypes = keyof DataTypes> extends
   async val(): Promise<number> {
     await this.data();
     return this.get();
-  }
-
-  set(value: number) {
-    this.getValues()[0] = value;
   }
 
   add(value: number) {
@@ -562,13 +432,6 @@ export class Array1D<T extends keyof DataTypes = keyof DataTypes> extends
     NDArray<T> {
   shape: [number];
 
-  constructor(data: NDArrayData<T>, dtype: T) {
-    const shape = (data.values != null) ?
-        [data.values.length] :
-        [util.sizeFromShape(data.textureShapeRC)];
-    super(shape, data, dtype);
-  }
-
   static new<T extends keyof DataTypes = keyof DataTypes>(
       values: DataTypes[T]|number[]|boolean[], dtype?: T): Array1D<T> {
     if (!instanceofTypedArray(values)) {
@@ -578,15 +441,11 @@ export class Array1D<T extends keyof DataTypes = keyof DataTypes> extends
           `Error constructing Array1D. Shape of values ${inferredShape} is ` +
               `not 1 dimensional.`);
     }
-    return new Array1D({values: toTypedArray(values, dtype)}, dtype);
+    return new Array1D([values.length], dtype, toTypedArray(values, dtype));
   }
 
   get(i: number): number {
     return this.getValues()[i];
-  }
-
-  set(value: number, i: number) {
-    this.getValues()[i] = value;
   }
 
   async val(i: number): Promise<number> {
@@ -608,6 +467,11 @@ export class Array1D<T extends keyof DataTypes = keyof DataTypes> extends
 
   asType<G extends keyof DataTypes>(dtype: G): Array1D<G> {
     return super.asType(dtype) as Array1D<G>;
+  }
+
+  static ones<T extends keyof DataTypes = keyof DataTypes>(
+      shape: [number], dtype?: T): Array1D<T> {
+    return NDArray.ones(shape, dtype) as Array1D<T>;
   }
 
   static zeros<T extends keyof DataTypes = keyof DataTypes>(
@@ -652,9 +516,10 @@ export class Array2D<T extends keyof DataTypes = keyof DataTypes> extends
 
   private stride0: number;
 
-  constructor(shape: [number, number], data: NDArrayData<T>, dtype: T) {
+  constructor(
+      shape: [number, number], dtype: T, values?: DataTypes[T], id?: number) {
     util.assert(shape.length === 2, 'Shape should be of length 2');
-    super(shape, data, dtype);
+    super(shape, dtype, values, id);
     this.stride0 = this.strides[0];
   }
 
@@ -672,15 +537,11 @@ export class Array2D<T extends keyof DataTypes = keyof DataTypes> extends
                 `${shape}. `);
       }
     }
-    return new Array2D(shape, {values: toTypedArray(values, dtype)}, dtype);
+    return new Array2D(shape, dtype, toTypedArray(values, dtype));
   }
 
   get(i: number, j: number) {
     return this.getValues()[this.stride0 * i + j];
-  }
-
-  set(value: number, i: number, j: number) {
-    this.getValues()[this.stride0 * i + j] = value;
   }
 
   add(value: number, i: number, j: number) {
@@ -702,6 +563,11 @@ export class Array2D<T extends keyof DataTypes = keyof DataTypes> extends
 
   asType<G extends keyof DataTypes>(dtype: G): Array2D<G> {
     return super.asType(dtype) as Array2D<G>;
+  }
+
+  static ones<T extends keyof DataTypes = keyof DataTypes>(
+      shape: [number, number], dtype?: T): Array2D<T> {
+    return NDArray.ones(shape, dtype) as Array2D<T>;
   }
 
   static zeros<T extends keyof DataTypes = keyof DataTypes>(
@@ -746,9 +612,11 @@ export class Array3D<T extends keyof DataTypes = keyof DataTypes> extends
   private stride0: number;
   private stride1: number;
 
-  constructor(shape: [number, number, number], data: NDArrayData<T>, dtype: T) {
+  constructor(
+      shape: [number, number, number], dtype: T, values?: DataTypes[T],
+      id?: number) {
     util.assert(shape.length === 3, 'Shape should be of length 3');
-    super(shape, data, dtype);
+    super(shape, dtype, values, id);
     this.stride0 = this.strides[0];
     this.stride1 = this.strides[1];
   }
@@ -767,15 +635,11 @@ export class Array3D<T extends keyof DataTypes = keyof DataTypes> extends
                 `${shape}. `);
       }
     }
-    return new Array3D(shape, {values: toTypedArray(values, dtype)}, dtype);
+    return new Array3D(shape, dtype, toTypedArray(values, dtype));
   }
 
   get(i: number, j: number, k: number) {
     return this.getValues()[this.stride0 * i + this.stride1 * j + k];
-  }
-
-  set(value: number, i: number, j: number, k: number) {
-    this.getValues()[this.stride0 * i + this.stride1 * j + k] = value;
   }
 
   async val(i: number, j: number, k: number): Promise<number> {
@@ -799,6 +663,11 @@ export class Array3D<T extends keyof DataTypes = keyof DataTypes> extends
 
   asType<G extends keyof DataTypes>(dtype: G): Array3D<G> {
     return super.asType(dtype) as Array3D<G>;
+  }
+
+  static ones<T extends keyof DataTypes = keyof DataTypes>(
+      shape: [number, number, number], dtype?: T): Array3D<T> {
+    return NDArray.ones(shape, dtype) as Array3D<T>;
   }
 
   static zeros<T extends keyof DataTypes = keyof DataTypes>(
@@ -846,9 +715,10 @@ export class Array4D<T extends keyof DataTypes = keyof DataTypes> extends
   private stride2: number;
 
   constructor(
-      shape: [number, number, number, number], data: NDArrayData<T>, dtype: T) {
+      shape: [number, number, number, number], dtype: T, values?: DataTypes[T],
+      id?: number) {
     util.assert(shape.length === 4, 'Shape should be of length 4');
-    super(shape, data, dtype);
+    super(shape, dtype, values, id);
     this.stride0 = this.strides[0];
     this.stride1 = this.strides[1];
     this.stride2 = this.strides[2];
@@ -868,17 +738,12 @@ export class Array4D<T extends keyof DataTypes = keyof DataTypes> extends
                 `${shape}. `);
       }
     }
-    return new Array4D(shape, {values: toTypedArray(values, dtype)}, dtype);
+    return new Array4D(shape, dtype, toTypedArray(values, dtype));
   }
 
   get(i: number, j: number, k: number, l: number) {
     return this.getValues()
         [this.stride0 * i + this.stride1 * j + this.stride2 * k + l];
-  }
-
-  set(value: number, i: number, j: number, k: number, l: number) {
-    this.getValues()
-        [this.stride0 * i + this.stride1 * j + this.stride2 * k + l] = value;
   }
 
   async val(i: number, j: number, k: number, l: number): Promise<number> {
@@ -906,6 +771,11 @@ export class Array4D<T extends keyof DataTypes = keyof DataTypes> extends
 
   asType<G extends keyof DataTypes>(dtype: G): Array4D<G> {
     return super.asType(dtype) as Array4D<G>;
+  }
+
+  static ones<T extends keyof DataTypes = keyof DataTypes>(
+      shape: [number, number, number, number], dtype?: T): Array4D<T> {
+    return NDArray.ones(shape, dtype) as Array4D<T>;
   }
 
   static zeros<T extends keyof DataTypes = keyof DataTypes>(
@@ -950,16 +820,23 @@ function copyTypedArray<T extends keyof DataTypes>(
   if (dtype == null || dtype === 'float32') {
     return new Float32Array(array as number[]);
   } else if (dtype === 'int32') {
-    return new Int32Array(array as number[]);
-  } else if (dtype === 'uint8') {
-    return new Uint8Array(array as number[]);
+    const vals = new Int32Array(array.length);
+    for (let i = 0; i < vals.length; ++i) {
+      const val = array[i] as number;
+      if (util.isValNaN(val, 'int32')) {
+        vals[i] = util.getNaN('int32');
+      } else {
+        vals[i] = val;
+      }
+    }
+    return vals;
   } else if (dtype === 'bool') {
     const bool = new Uint8Array(array.length);
     for (let i = 0; i < bool.length; ++i) {
-      const val = array[i];
+      const val = array[i] as number;
       if (util.isValNaN(val as number, 'bool')) {
         bool[i] = util.getNaN('bool');
-      } else if (val) {
+      } else if (Math.round(val) !== 0) {
         bool[i] = 1;
       }
     }
@@ -999,41 +876,16 @@ function makeZerosTypedArray<T extends keyof DataTypes>(
     return new Int32Array(size);
   } else if (dtype === 'bool') {
     return new Uint8Array(size);
-  } else if (dtype === 'uint8') {
-    return new Uint8Array(size);
   } else {
     throw new Error(`Unknown data type ${dtype}`);
   }
 }
 
-function typedArrayToFloat32(
-    a: TypedArray, dtype: keyof DataTypes): Float32Array {
-  if (a instanceof Float32Array) {
-    return a;
-  } else {
-    const res = new Float32Array(a.length);
-    for (let i = 0; i < res.length; i++) {
-      const val = a[i];
-      res[i] = util.isValNaN(val, dtype) ? NaN : val;
-    }
-    return res;
+function makeOnesTypedArray<T extends keyof DataTypes>(
+    size: number, dtype: T): DataTypes[T] {
+  const array = makeZerosTypedArray(size, dtype);
+  for (let i = 0; i < array.length; i++) {
+    array[i] = 1;
   }
-}
-
-function float32ToTypedArray<T extends keyof DataTypes>(
-    a: Float32Array, dtype: T): DataTypes[T] {
-  if (dtype === 'float32') {
-    return a;
-  } else if (dtype === 'int32' || dtype === 'bool' || dtype === 'uint8') {
-    const result = (dtype === 'int32') ? new Int32Array(a.length) :
-                                         new Uint8Array(a.length);
-    for (let i = 0; i < result.length; ++i) {
-      let val = a[i];
-      val = isNaN(val) ? util.getNaN(dtype) : Math.round(val);
-      result[i] = val;
-    }
-    return result;
-  } else {
-    throw new Error(`Unknown dtype ${dtype}`);
-  }
+  return array;
 }
