@@ -31,6 +31,26 @@ export const EQUAL = `
   if (isNaN(b)) return b;
   return float(a == b);
 `;
+export const GREATER = `
+  if (isNaN(a)) return a;
+  if (isNaN(b)) return b;
+  return float(a > b);
+`;
+export const GREATER_EQUAL = `
+  if (isNaN(a)) return a;
+  if (isNaN(b)) return b;
+  return float(a >= b);
+`;
+export const LESS = `
+  if (isNaN(a)) return a;
+  if (isNaN(b)) return b;
+  return float(a < b);
+`;
+export const LESS_EQUAL = `
+  if (isNaN(a)) return a;
+  if (isNaN(b)) return b;
+  return float(a <= b);
+`;
 
 export class BinaryOpProgram implements GPGPUProgram {
   variableNames = ['A', 'B'];

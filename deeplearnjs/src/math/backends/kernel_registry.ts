@@ -1,7 +1,7 @@
 import {NDArray} from '../ndarray';
 
 import {MathBackend} from './backend';
-import {KernelInputConfig} from './kernel_config';
+import {KernelInputConfig} from './tape_types';
 // tslint:disable-next-line:max-line-length
 import {ArgMaxInputConfig, ArgMaxNode, ArgMinInputConfig, ArgMinNode} from './types/argminmax';
 // tslint:disable-next-line:max-line-length
@@ -97,6 +97,18 @@ const KERNEL_METHODS: {
   },
   Equal: (backend: MathBackend, config: EqualInputConfig) => {
     return backend.equal(config.inputs.a, config.inputs.b);
+  },
+  Greater: (backend: MathBackend, config: EqualInputConfig) => {
+    return backend.greater(config.inputs.a, config.inputs.b);
+  },
+  GreaterEqual: (backend: MathBackend, config: EqualInputConfig) => {
+    return backend.greaterEqual(config.inputs.a, config.inputs.b);
+  },
+  Less: (backend: MathBackend, config: EqualInputConfig) => {
+    return backend.less(config.inputs.a, config.inputs.b);
+  },
+  LessEqual: (backend: MathBackend, config: EqualInputConfig) => {
+    return backend.lessEqual(config.inputs.a, config.inputs.b);
   },
   TopKValues:
       (backend: MathBackend, config: TopKValuesInputConfig<NDArray>) => {
@@ -258,7 +270,7 @@ const KERNEL_METHODS: {
 };
 export function executeKernel<K extends keyof KernelConfigRegistry, R extends
                                   KernelConfigRegistry[K]['output']>(
-    kernelName: K, backend: MathBackend,
+    backend: MathBackend, kernelName: K,
     config: KernelConfigRegistry[K]['inputAndArgs']): R {
   return KERNEL_METHODS[kernelName](backend, config) as R;
 }
@@ -283,6 +295,10 @@ export interface KernelConfigRegistry {
   ArgMax: ArgMaxNode;
   ArgMin: ArgMinNode;
   Equal: EqualNode;
+  Greater: EqualNode;
+  GreaterEqual: EqualNode;
+  Less: EqualNode;
+  LessEqual: EqualNode;
   TopKValues: TopKValuesNode<'float32'|'int32'|'bool', NDArray>;
   TopKIndices: TopKIndicesNode;
   Min: MinNode<'float32'|'int32'|'bool'>;

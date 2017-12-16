@@ -16,6 +16,7 @@
  */
 
 import * as seedrandom from 'seedrandom';
+import {ENV} from '../../environment';
 import * as util from '../../util';
 import * as broadcast_util from '../broadcast_util';
 import * as concat_util from '../concat_util';
@@ -25,7 +26,7 @@ import {NDArrayMath} from '../math';
 import {Array1D, Array2D, Array3D, Array4D, DataTypes, NDArray, Scalar} from '../ndarray';
 import {SumTypes, SumTypesMap} from '../types';
 import * as axis_util from './../axis_util';
-import {BACKEND_REGISTRY, MathBackend} from './backend';
+import {MathBackend} from './backend';
 import {MatrixOrientation} from './types/matmul';
 
 export class MathBackendCPU implements MathBackend {
@@ -451,6 +452,46 @@ export class MathBackendCPU implements MathBackend {
         return util.getNaN('bool');
       } else {
         return (aVal === bVal) ? 1 : 0;
+      }
+    });
+  }
+
+  greater(a: NDArray, b: NDArray): NDArray<'bool'> {
+    return this.broadcastedBinaryOp(a, b, 'bool', (aVal, bVal) => {
+      if (util.isValNaN(aVal, a.dtype) || util.isValNaN(bVal, b.dtype)) {
+        return util.getNaN('bool');
+      } else {
+        return (aVal > bVal) ? 1 : 0;
+      }
+    });
+  }
+
+  greaterEqual(a: NDArray, b: NDArray): NDArray<'bool'> {
+    return this.broadcastedBinaryOp(a, b, 'bool', (aVal, bVal) => {
+      if (util.isValNaN(aVal, a.dtype) || util.isValNaN(bVal, b.dtype)) {
+        return util.getNaN('bool');
+      } else {
+        return (aVal >= bVal) ? 1 : 0;
+      }
+    });
+  }
+
+  less(a: NDArray, b: NDArray): NDArray<'bool'> {
+    return this.broadcastedBinaryOp(a, b, 'bool', (aVal, bVal) => {
+      if (util.isValNaN(aVal, a.dtype) || util.isValNaN(bVal, b.dtype)) {
+        return util.getNaN('bool');
+      } else {
+        return (aVal < bVal) ? 1 : 0;
+      }
+    });
+  }
+
+  lessEqual(a: NDArray, b: NDArray): NDArray<'bool'> {
+    return this.broadcastedBinaryOp(a, b, 'bool', (aVal, bVal) => {
+      if (util.isValNaN(aVal, a.dtype) || util.isValNaN(bVal, b.dtype)) {
+        return util.getNaN('bool');
+      } else {
+        return (aVal <= bVal) ? 1 : 0;
       }
     });
   }
@@ -1351,11 +1392,12 @@ export class MathBackendCPU implements MathBackend {
   }
 }
 
-BACKEND_REGISTRY['cpu'] = new MathBackendCPU();
+ENV.registerBackend('cpu', () => new MathBackendCPU());
 
 // TODO(nsthorat): Deprecate this once we export non-abstract NDArrayMath.
 export class NDArrayMathCPU extends NDArrayMath {
   constructor(safeMode = false) {
     super('cpu', safeMode);
+    ENV.setMath(this);
   }
 }

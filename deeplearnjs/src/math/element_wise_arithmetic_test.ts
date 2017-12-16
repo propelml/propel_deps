@@ -728,3 +728,103 @@ import {Array1D, Array2D, Array3D, Scalar} from './ndarray';
     {'WEBGL_FLOAT_TEXTURE_ENABLED': false, 'WEBGL_VERSION': 1}
   ]);
 }
+
+// element-wise greater
+{
+  const tests: MathTests = it => {
+    it('propagates NaNs', math => {
+      const a = Array1D.new([1, 5, 1, 5, NaN]);
+      const b = Array1D.new([4, 1, 2, 5, -1]);
+
+      const res = math.greater(a, b);
+      expect(res.dtype).toBe('bool');
+      expect(res.getValues()).toEqual(
+        new Uint8Array([0, 1, 0, 0, util.NAN_BOOL]));
+
+      a.dispose();
+      b.dispose();
+    });
+  };
+
+  test_util.describeMathCPU('greater', [tests]);
+  test_util.describeMathGPU('greater', [tests], [
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': true, 'WEBGL_VERSION': 1},
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': true, 'WEBGL_VERSION': 2},
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': false, 'WEBGL_VERSION': 1}
+  ]);
+}
+
+// element-wise greater equal
+{
+  const tests: MathTests = it => {
+    it('propagates NaNs', math => {
+      const a = Array1D.new([1, 5, 1, 5, NaN]);
+      const b = Array1D.new([4, 1, 2, 5, -1]);
+
+      const res = math.greaterEqual(a, b);
+      expect(res.dtype).toBe('bool');
+      expect(res.getValues()).toEqual(
+        new Uint8Array([0, 1, 0, 1, util.NAN_BOOL]));
+
+      a.dispose();
+      b.dispose();
+    });
+  };
+
+  test_util.describeMathCPU('greaterEqual', [tests]);
+  test_util.describeMathGPU('greaterEqual', [tests], [
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': true, 'WEBGL_VERSION': 1},
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': true, 'WEBGL_VERSION': 2},
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': false, 'WEBGL_VERSION': 1}
+  ]);
+}
+
+// element-wise less
+{
+  const tests: MathTests = it => {
+    it('propagates NaNs', math => {
+      const a = Array1D.new([1, 5, 1, 5, NaN]);
+      const b = Array1D.new([4, 1, 2, 5, -1]);
+
+      const res = math.less(a, b);
+      expect(res.dtype).toBe('bool');
+      expect(res.getValues()).toEqual(
+        new Uint8Array([1, 0, 1, 0, util.NAN_BOOL]));
+
+      a.dispose();
+      b.dispose();
+    });
+  };
+
+  test_util.describeMathCPU('less', [tests]);
+  test_util.describeMathGPU('less', [tests], [
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': true, 'WEBGL_VERSION': 1},
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': true, 'WEBGL_VERSION': 2},
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': false, 'WEBGL_VERSION': 1}
+  ]);
+}
+
+// element-wise less equal
+{
+  const tests: MathTests = it => {
+    it('propagates NaNs', math => {
+      const a = Array1D.new([1, 5, 1, 5, NaN]);
+      const b = Array1D.new([4, 1, 2, 5, -1]);
+
+      const res = math.lessEqual(a, b);
+      expect(res.dtype).toBe('bool');
+      expect(res.getValues()).toEqual(
+        new Uint8Array([1, 0, 1, 1, util.NAN_BOOL]));
+
+      a.dispose();
+      b.dispose();
+    });
+  };
+
+  test_util.describeMathCPU('lessEqual', [tests]);
+  test_util.describeMathGPU('lessEqual', [tests], [
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': true, 'WEBGL_VERSION': 1},
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': true, 'WEBGL_VERSION': 2},
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': false, 'WEBGL_VERSION': 1}
+  ]);
+}

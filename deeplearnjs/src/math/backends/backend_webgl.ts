@@ -25,8 +25,7 @@ import {NDArrayMath} from '../math';
 import {Array1D, Array2D, Array3D, Array4D, DataTypes, NDArray} from '../ndarray';
 import * as reduce_util from '../reduce_util';
 import {SumTypes, SumTypesMap} from '../types';
-
-import {BACKEND_REGISTRY, MathBackend} from './backend';
+import {MathBackend} from './backend';
 import {MatrixOrientation} from './types/matmul';
 import {ArgMinMaxProgram} from './webgl/argminmax_gpu';
 import {BatchNormProgram} from './webgl/batchnorm_gpu';
@@ -139,6 +138,9 @@ export class MathBackendWebGL implements MathBackend {
   private gpgpuCreatedLocally: boolean;
 
   constructor(gpgpu?: GPGPUContext) {
+    if (ENV.get('WEBGL_VERSION') < 1) {
+      throw new Error('WebGL is not supported on this device');
+    }
     if (gpgpu == null) {
       const gl = gpgpu_util.createWebGLContext();
       this.gpgpu = new GPGPUContext(gl);
@@ -380,6 +382,32 @@ export class MathBackendWebGL implements MathBackend {
 
   equal(a: NDArray, b: NDArray): NDArray<'bool'> {
     const program = new BinaryOpProgram(binaryop_gpu.EQUAL, a.shape, b.shape);
+    const output = this.makeOutputArray(program.outputShape, 'bool');
+    return this.compileAndRun(program, [a, b], output);
+  }
+
+  greater(a: NDArray, b: NDArray): NDArray<'bool'> {
+    const program = new BinaryOpProgram(binaryop_gpu.GREATER, a.shape, b.shape);
+    const output = this.makeOutputArray(program.outputShape, 'bool');
+    return this.compileAndRun(program, [a, b], output);
+  }
+
+  greaterEqual(a: NDArray, b: NDArray): NDArray<'bool'> {
+    const program =
+        new BinaryOpProgram(binaryop_gpu.GREATER_EQUAL, a.shape, b.shape);
+    const output = this.makeOutputArray(program.outputShape, 'bool');
+    return this.compileAndRun(program, [a, b], output);
+  }
+
+  less(a: NDArray, b: NDArray): NDArray<'bool'> {
+    const program = new BinaryOpProgram(binaryop_gpu.LESS, a.shape, b.shape);
+    const output = this.makeOutputArray(program.outputShape, 'bool');
+    return this.compileAndRun(program, [a, b], output);
+  }
+
+  lessEqual(a: NDArray, b: NDArray): NDArray<'bool'> {
+    const program =
+        new BinaryOpProgram(binaryop_gpu.LESS_EQUAL, a.shape, b.shape);
     const output = this.makeOutputArray(program.outputShape, 'bool');
     return this.compileAndRun(program, [a, b], output);
   }
@@ -684,12 +712,13 @@ export class MathBackendWebGL implements MathBackend {
   }
 }
 
-BACKEND_REGISTRY['webgl'] = new MathBackendWebGL();
+ENV.registerBackend('webgl', () => new MathBackendWebGL());
 
 // TODO(nsthorat): Deprecate this once we export non-abstract NDArrayMath.
 export class NDArrayMathGPU extends NDArrayMath {
   constructor(gpgpu?: GPGPUContext, safeMode = false) {
     super(new MathBackendWebGL(gpgpu), safeMode);
+    ENV.setMath(this);
   }
 
   getGPGPUContext(): GPGPUContext {
