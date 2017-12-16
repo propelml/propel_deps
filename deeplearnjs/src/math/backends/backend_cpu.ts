@@ -496,6 +496,12 @@ export class MathBackendCPU implements MathBackend {
     });
   }
 
+  select(cond: NDArray<'bool'>, a: NDArray, b: NDArray): NDArray {
+    return this.ternaryOp(cond, a, b, a.dtype, (condVal, aVal, bVal) => {
+      return condVal ? aVal : bVal;
+    });
+  }
+
   topKValues<D extends keyof DataTypes, T extends NDArray<D>>(x: T, k: number):
       Array1D<D> {
     return this.topK(x, k).values as Array1D<D>;
@@ -1387,6 +1393,28 @@ export class MathBackendCPU implements MathBackend {
       const bIndex = b.locToIndex(bLoc);
 
       newValues[i] = op(aValues[aIndex], bValues[bIndex]);
+    }
+    return result;
+  }
+
+  private ternaryOp<D extends keyof DataTypes>(
+      a: NDArray, b: NDArray, c: NDArray, dtype: D,
+      op: (a: number, b: number, c: number) => number): NDArray<D> {
+    util.assertShapesMatch(a.shape, b.shape);
+    util.assertShapesMatch(b.shape, c.shape);
+    const newShape = a.shape;
+    const result = NDArray.zeros(newShape, dtype);
+    const newValues = result.getValues();
+    const aValues = a.getValues();
+    const bValues = b.getValues();
+    const cValues = c.getValues();
+    for (let i = 0; i < newValues.length; ++i) {
+      // This is probably overkill. We can probably just use i.
+      const loc = result.indexToLoc(i);
+      const aIndex = a.locToIndex(loc);
+      const bIndex = b.locToIndex(loc);
+      const cIndex = c.locToIndex(loc);
+      newValues[i] = op(aValues[aIndex], bValues[bIndex], cValues[cIndex]);
     }
     return result;
   }

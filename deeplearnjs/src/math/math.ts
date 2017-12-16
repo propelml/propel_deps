@@ -791,6 +791,13 @@ export class NDArrayMath implements NDArrayStorage, NDArrayManager {
   }
 
   /**
+   * Selects elements from `a` or `b`, depending on `cond`.
+   */
+  select(cond: NDArray<'bool'>, a: NDArray, b: NDArray): NDArray {
+    return this.backendEngine.executeKernel('Select', {inputs: {cond, a, b}});
+  }
+
+  /**
    * Computes the top K values and flattened indices.
    * @param x The input NDArray.
    * @param k How many top values to compute.

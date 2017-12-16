@@ -412,6 +412,10 @@ export class MathBackendWebGL implements MathBackend {
     return this.compileAndRun(program, [a, b], output);
   }
 
+  select(cond: NDArray<'bool'>, a: NDArray, b: NDArray): NDArray {
+    throw new Error('select GPU not yet implemented!');
+  }
+
   topKValues<D extends keyof DataTypes, T extends NDArray<D>>(x: T, k: number):
       Array1D<D> {
     throw new Error('topKValues GPU not yet implemented!');

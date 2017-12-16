@@ -828,3 +828,32 @@ import {Array1D, Array2D, Array3D, Scalar} from './ndarray';
     {'WEBGL_FLOAT_TEXTURE_ENABLED': false, 'WEBGL_VERSION': 1}
   ]);
 }
+
+// select
+{
+  const tests: MathTests = it => {
+    it('propagates NaNs', math => {
+      const a = Array1D.new([1, 5, 1, 5, NaN]);
+      const b = Array1D.new([4, 1, 2, 5, -1]);
+      const cond = Array1D.new([
+        false, true, true, false, false], 'bool');
+
+      const res = math.select(cond, a, b);
+      expect(res.dtype).toBe('float32');
+      expect(res.getValues()).toEqual(
+        new Float32Array([4, 5, 1, 5, -1]));
+
+      a.dispose();
+      b.dispose();
+    });
+  };
+
+  test_util.describeMathCPU('select', [tests]);
+  /*
+  test_util.describeMathGPU('select', [tests], [
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': true, 'WEBGL_VERSION': 1},
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': true, 'WEBGL_VERSION': 2},
+    {'WEBGL_FLOAT_TEXTURE_ENABLED': false, 'WEBGL_VERSION': 1}
+  ]);
+  */
+}

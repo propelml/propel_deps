@@ -39,3 +39,18 @@ export interface EqualGradientInputArrays extends TapeNodeInputGradientArrays {
   a: () => NDArray;
   b: () => NDArray;
 }
+
+export interface SelectNode extends KernelNode {
+  inputAndArgs: SelectInputConfig;
+  output: NDArray;
+}
+
+export interface SelectInputConfig extends KernelInputConfig {
+  inputs: SelectInputArrays;
+}
+
+export interface SelectInputArrays extends TapeNodeInputArrays {
+  cond: NDArray<'bool'>;
+  a: NDArray;
+  b: NDArray;
+}

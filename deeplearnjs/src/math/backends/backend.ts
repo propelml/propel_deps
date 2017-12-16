@@ -80,6 +80,7 @@ export interface MathBackend extends NDArrayStorage {
   greaterEqual(a: NDArray, b: NDArray): NDArray<'bool'>;
   less(a: NDArray, b: NDArray): NDArray<'bool'>;
   lessEqual(a: NDArray, b: NDArray): NDArray<'bool'>;
+  select(cond: NDArray<'bool'>, a: NDArray, b: NDArray): NDArray;
 
   topKValues<D extends keyof DataTypes, T extends NDArray<D>>(x: T, k: number):
       Array1D<D>;

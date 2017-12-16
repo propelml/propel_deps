@@ -11,7 +11,7 @@ import {BinaryInputConfig, BinaryNode} from './types/binary';
 import {Concat1DInputConfig, Concat1DNode, Concat2DInputConfig, Concat2DNode, Concat3DInputConfig, Concat3DNode, Concat4DInputConfig, Concat4DNode} from './types/concat';
 // tslint:disable-next-line:max-line-length
 import {Conv2DDerBiasInputConfig, Conv2DDerBiasNode, Conv2DDerFilterInputConfig, Conv2DDerFilterNode, Conv2DDerInputInputConfig, Conv2DDerInputNode, Conv2DInputConfig, Conv2DNode, DepthwiseConv2DInputConfig} from './types/conv';
-import {EqualInputConfig, EqualNode} from './types/logical';
+import {EqualInputConfig, EqualNode, SelectInputConfig, SelectNode} from './types/logical';
 import {MatMulInputConfig, MatMulNode} from './types/matmul';
 // tslint:disable-next-line:max-line-length
 import {MaxInputConfig, MaxNode, MinInputConfig, MinNode} from './types/minmax';
@@ -109,6 +109,9 @@ const KERNEL_METHODS: {
   },
   LessEqual: (backend: MathBackend, config: EqualInputConfig) => {
     return backend.lessEqual(config.inputs.a, config.inputs.b);
+  },
+  Select: (backend: MathBackend, config: SelectInputConfig) => {
+    return backend.select(config.inputs.cond, config.inputs.a, config.inputs.b);
   },
   TopKValues:
       (backend: MathBackend, config: TopKValuesInputConfig<NDArray>) => {
@@ -299,6 +302,7 @@ export interface KernelConfigRegistry {
   GreaterEqual: EqualNode;
   Less: EqualNode;
   LessEqual: EqualNode;
+  Select: SelectNode;
   TopKValues: TopKValuesNode<'float32'|'int32'|'bool', NDArray>;
   TopKIndices: TopKIndicesNode;
   Min: MinNode<'float32'|'int32'|'bool'>;
