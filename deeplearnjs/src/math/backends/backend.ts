@@ -32,6 +32,7 @@ export interface NDArrayStorage {
       id: number,
       pixels: ImageData|HTMLImageElement|HTMLCanvasElement|HTMLVideoElement,
       numChannels: number): void;
+  time(query: () => NDArray): Promise<number>;
 }
 
 /**
@@ -105,6 +106,8 @@ export interface MathBackend extends NDArrayStorage {
   eluDer<T extends NDArray>(x: T): T;
   selu<T extends NDArray>(x: T): T;
   leakyRelu<T extends NDArray>(x: T, alpha: number): T;
+  prelu<T extends NDArray>(x: T, alpha: T): T;
+  preluDer<T extends NDArray>(x: T, alpha: T): T;
 
   clip<T extends NDArray>(x: T, min: number, max: number): T;
 
@@ -158,6 +161,10 @@ export interface MathBackend extends NDArrayStorage {
       x: Array3D, mean: Array3D|Array1D, variance: Array3D|Array1D,
       varianceEpsilon: number, scale?: Array3D|Array1D,
       offset?: Array3D|Array1D): Array3D;
+  batchNormalization4D(
+        x: Array4D, mean: Array4D|Array1D, variance: Array4D|Array1D,
+        varianceEpsilon: number, scale?: Array4D|Array1D,
+        offset?: Array4D|Array1D): Array4D;
 
   multinomial(probabilities: Array2D, numSamples: number, seed: number):
       Array2D<'int32'>;
