@@ -6,7 +6,7 @@ import identity from "../identity";
 import {degrees, radians, sqrt} from "../math";
 import {rotateRadians} from "../rotation";
 import {transformer} from "../transform";
-import {fitExtent, fitSize} from "./fit";
+import {fitExtent, fitSize, fitWidth, fitHeight} from "./fit";
 import resample from "./resample";
 
 var transformRadians = transformer({
@@ -100,6 +100,14 @@ export function projectionMutator(projectAt) {
 
   projection.fitSize = function(size, object) {
     return fitSize(projection, size, object);
+  };
+
+  projection.fitWidth = function(width, object) {
+    return fitWidth(projection, width, object);
+  };
+
+  projection.fitHeight = function(height, object) {
+    return fitHeight(projection, height, object);
   };
 
   function recenter() {

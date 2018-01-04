@@ -1,7 +1,7 @@
 import clipRectangle from "../clip/rectangle";
 import identity from "../identity";
 import {transformer} from "../transform";
-import {fitExtent, fitSize} from "./fit";
+import {fitExtent, fitSize, fitWidth, fitHeight} from "./fit";
 
 function scaleTranslate(kx, ky, tx, ty) {
   return kx === 1 && ky === 1 && tx === 0 && ty === 0 ? identity : transformer({
@@ -51,6 +51,12 @@ export default function() {
     },
     fitSize: function(size, object) {
       return fitSize(projection, size, object);
+    },
+    fitWidth: function(width, object) {
+      return fitWidth(projection, width, object);
+    },
+    fitHeight: function(height, object) {
+      return fitHeight(projection, height, object);
     }
   };
 }
