@@ -39,10 +39,8 @@ export class UnaryOpProgram implements GPGPUProgram {
   }
 }
 
-export const CHECK_NAN_SNIPPET = `
-  if (isNaN(x)) {
-    return x;
-  }
+const CHECK_NAN_SNIPPET = `
+  if (isNaN(x)) return x;
 `;
 
 export const ABS = `
@@ -150,4 +148,8 @@ export const TANH = `
 
 export const SQUARE = `
   return x * x;
+`;
+
+export const TO_INT = `
+  return float(int(x));
 `;

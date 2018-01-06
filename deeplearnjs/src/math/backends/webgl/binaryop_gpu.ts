@@ -18,6 +18,11 @@
 import * as broadcast_util from '../../broadcast_util';
 import {GPGPUProgram} from './gpgpu_math';
 
+const CHECK_NAN_SNIPPET = `
+  if (isNaN(a)) return a;
+  if (isNaN(b)) return b;
+`;
+
 export const ADD = 'return a + b;';
 export const SUB = 'return a - b;';
 export const MUL = 'return a * b;';
@@ -26,10 +31,11 @@ export const POW = `
   return (round(mod(b, 2.0)) == 0 || round(mod(b, 2.0)) == 2) ?
       pow(abs(a), b) : sign(a) * pow(abs(a), b);
 `;
-export const EQUAL = `
-  if (isNaN(a)) return a;
-  if (isNaN(b)) return b;
+export const EQUAL = CHECK_NAN_SNIPPET + `
   return float(a == b);
+`;
+export const NOT_EQUAL = CHECK_NAN_SNIPPET + `
+  return float(a != b);
 `;
 export const GREATER = `
   if (isNaN(a)) return a;
@@ -56,7 +62,13 @@ export const PRELU = `
 `;
 export const PRELU_DER = `
   return (a > 0.0) ? 1.0 : ((a < 0.0) ? b : a);
-`
+`;
+export const MAX = CHECK_NAN_SNIPPET + `
+  return max(a, b);
+`;
+export const MIN = CHECK_NAN_SNIPPET + `
+  return min(a, b);
+`;
 
 export class BinaryOpProgram implements GPGPUProgram {
   variableNames = ['A', 'B'];

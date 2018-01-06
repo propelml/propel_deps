@@ -24,7 +24,7 @@ import * as concat_util from '../concat_util';
 import {Conv2DInfo} from '../conv_util';
 import {NDArrayMath} from '../math';
 // tslint:disable-next-line:max-line-length
-import {Array1D, Array2D, Array3D, Array4D, DataTypes, NDArray, Scalar} from '../ndarray';
+import {Array1D, Array2D, Array3D, Array4D, DataType, DataTypeMap, NDArray, Rank, Scalar} from '../ndarray';
 import * as types from '../types';
 import {SumTypes, SumTypesMap} from '../types';
 
@@ -33,17 +33,33 @@ import {MathBackend} from './backend';
 import {MatrixOrientation} from './types/matmul';
 
 export class MathBackendCPU implements MathBackend {
-  private data: {[id: number]: DataTypes[keyof DataTypes]} = {};
+  private data: {[dataId: number]: DataTypeMap[DataType]} = {};
+  private canvas: HTMLCanvasElement;
 
-  dispose() {}
-  write<T extends keyof DataTypes>(
-      id: number, values: DataTypes[T], dtype: T, shape: number[]): void {
-    this.data[id] = values;
+  constructor() {
+    if (typeof document !== 'undefined') {
+      this.canvas = document.createElement('canvas');
+    }
+  }
+
+  register(dataId: number, shape: number[], dtype: DataType): void {
+    this.data[dataId] = null;
+  }
+  write<D extends DataType>(dataId: number, values: DataTypeMap[D]): void {
+    if (values == null) {
+      throw new Error('MathBackendCPU.write(): values can not be null');
+    }
+    this.throwIfNoData(dataId);
+    this.data[dataId] = values;
   }
   writePixels(
-      id: number,
+      dataId: number,
       pixels: ImageData|HTMLImageElement|HTMLCanvasElement|HTMLVideoElement,
       numChannels: number): void {
+    if (pixels == null) {
+      throw new Error('MathBackendCPU.writePixels(): pixels can not be null');
+    }
+    this.throwIfNoData(dataId);
     let vals: Uint8ClampedArray;
     if (pixels instanceof ImageData) {
       vals = pixels.data;
@@ -54,13 +70,17 @@ export class MathBackendCPU implements MathBackend {
     } else if (
         pixels instanceof HTMLImageElement ||
         pixels instanceof HTMLVideoElement) {
-      const canvas = document.createElement('canvas');
-      canvas.width = pixels.width;
-      canvas.height = pixels.height;
-      canvas.getContext('2d').drawImage(
-          pixels, 0, 0, canvas.width, canvas.height);
-      vals = canvas.getContext('2d')
-                 .getImageData(0, 0, canvas.width, canvas.height)
+      if (this.canvas == null) {
+        throw new Error(
+            'Can\'t read pixels from HTMLImageElement outside ' +
+            'the browser.');
+      }
+      this.canvas.width = pixels.width;
+      this.canvas.height = pixels.height;
+      this.canvas.getContext('2d').drawImage(
+          pixels, 0, 0, pixels.width, pixels.height);
+      vals = this.canvas.getContext('2d')
+                 .getImageData(0, 0, pixels.width, pixels.height)
                  .data;
     } else {
       throw new Error(
@@ -78,28 +98,28 @@ export class MathBackendCPU implements MathBackend {
         }
       }
     }
-    this.data[id] = values;
+    this.data[dataId] = values;
   }
-  async read<T extends keyof DataTypes>(id: number): Promise<DataTypes[T]> {
-    this.throwIfNoData(id);
-    return this.data[id];
+  async read<D extends DataType>(dataId: number): Promise<DataTypeMap[D]> {
+    this.throwIfNoData(dataId);
+    return this.data[dataId];
   }
-  readSync<T extends keyof DataTypes>(id: number): DataTypes[T] {
-    this.throwIfNoData(id);
-    return this.data[id];
+  readSync<D extends DataType>(dataId: number): DataTypeMap[D] {
+    this.throwIfNoData(dataId);
+    return this.data[dataId];
   }
-  disposeData(id: number): void {
-    delete this.data[id];
+  disposeData(dataId: number): void {
+    delete this.data[dataId];
   }
   async time(query: () => NDArray): Promise<number> {
     const start = performance.now();
     query();
     return performance.now() - start;
   }
-  private throwIfNoData(id: number) {
-    if (!(id in this.data)) {
+  private throwIfNoData(dataId: number) {
+    if (!(dataId in this.data)) {
       throw new Error(
-          `No data found for NDArray with id ${id}. ` +
+          `No data found for NDArray with data id ${dataId}. ` +
           `Use dl.ENV.math instead of constructing your own NDArrayMath. ` +
           `If you need to construct your own math, make sure this array is ` +
           `allocated after the math construction`);
@@ -289,17 +309,16 @@ export class MathBackendCPU implements MathBackend {
     return this.multiply(Scalar.new(-1), x) as T;
   }
 
-  add<G extends keyof DataTypes>(a: NDArray<G>, b: NDArray<G>): NDArray<G> {
+  add<D extends DataType>(a: NDArray<D>, b: NDArray<D>): NDArray<D> {
     return this.broadcastedBinaryOp(
                a, b, types.upcastType(a.dtype, b.dtype),
-               (aValue, bValue) => aValue + bValue) as NDArray<G>;
+               (aValue, bValue) => aValue + bValue) as NDArray<D>;
   }
 
-  subtract<G extends keyof DataTypes>(a: NDArray<G>, b: NDArray<G>):
-      NDArray<G> {
+  subtract<D extends DataType>(a: NDArray<D>, b: NDArray<D>): NDArray<D> {
     return this.broadcastedBinaryOp(
                a, b, types.upcastType(a.dtype, b.dtype),
-               (aValue, bValue) => aValue - bValue) as NDArray<G>;
+               (aValue, bValue) => aValue - bValue) as NDArray<D>;
   }
 
   pow<T extends NDArray>(a: T, b: NDArray<'int32'>): T {
@@ -345,11 +364,10 @@ export class MathBackendCPU implements MathBackend {
     return Array2D.new([leftDim, rightDim], values);
   }
 
-  multiply<G extends keyof DataTypes>(a: NDArray<G>, b: NDArray<G>):
-      NDArray<G> {
+  multiply<D extends DataType>(a: NDArray<D>, b: NDArray<D>): NDArray<D> {
     return this.broadcastedBinaryOp(
                a, b, types.upcastType(a.dtype, b.dtype),
-               (aValue, bValue) => aValue * bValue) as NDArray<G>;
+               (aValue, bValue) => aValue * bValue) as NDArray<D>;
   }
 
   divide(a: NDArray, b: NDArray): NDArray<'float32'> {
@@ -358,8 +376,7 @@ export class MathBackendCPU implements MathBackend {
         NDArray<'float32'>;
   }
 
-  sum<T extends keyof DataTypes>(x: NDArray<T>, axes: number[]):
-      NDArray<SumTypes[T]> {
+  sum<D extends DataType>(x: NDArray<D>, axes: number[]): NDArray<SumTypes[D]> {
     axis_util.assertAxesAreInnerMostDims('sum', axes, x.rank);
     const [outShape, reduceShape] =
         axis_util.computeOutAndReduceShapes(x.shape, axes);
@@ -377,7 +394,7 @@ export class MathBackendCPU implements MathBackend {
       }
       vals[i] = sum;
     }
-    return result as NDArray<SumTypes[T]>;
+    return result as NDArray<SumTypes[D]>;
   }
 
   argMin(x: NDArray, axes: number[]): NDArray<'int32'> {
@@ -448,6 +465,16 @@ export class MathBackendCPU implements MathBackend {
     });
   }
 
+  notEqual(a: NDArray, b: NDArray): NDArray<'bool'> {
+    return this.broadcastedBinaryOp(a, b, 'bool', (aVal, bVal) => {
+      if (util.isValNaN(aVal, a.dtype) || util.isValNaN(bVal, b.dtype)) {
+        return util.getNaN('bool');
+      } else {
+        return (aVal !== bVal) ? 1 : 0;
+      }
+    });
+  }
+
   greater(a: NDArray, b: NDArray): NDArray<'bool'> {
     return this.broadcastedBinaryOp(a, b, 'bool', (aVal, bVal) => {
       if (util.isValNaN(aVal, a.dtype) || util.isValNaN(bVal, b.dtype)) {
@@ -494,7 +521,7 @@ export class MathBackendCPU implements MathBackend {
     });
   }
 
-  topKValues<D extends keyof DataTypes, T extends NDArray<D>>(x: T, k: number):
+  topKValues<D extends DataType, T extends NDArray<D>>(x: T, k: number):
       Array1D<D> {
     return this.topK(x, k).values as Array1D<D>;
   }
@@ -503,8 +530,8 @@ export class MathBackendCPU implements MathBackend {
     return this.topK(x, k).indices;
   }
 
-  private topK<D extends keyof DataTypes, T extends NDArray<D>>(
-      x: T, k: number): {values: Array1D<D>, indices: Array1D<'int32'>} {
+  private topK<D extends DataType, T extends NDArray<D>>(x: T, k: number):
+      {values: Array1D<D>, indices: Array1D<'int32'>} {
     const values = x.dataSync();
     const valuesAndIndices: Array<{value: number, index: number}> = [];
     for (let i = 0; i < values.length; i++) {
@@ -526,7 +553,7 @@ export class MathBackendCPU implements MathBackend {
     };
   }
 
-  min<G extends keyof DataTypes>(x: NDArray<G>, axes: number[]): NDArray<G> {
+  min<D extends DataType>(x: NDArray<D>, axes: number[]): NDArray<D> {
     axis_util.assertAxesAreInnerMostDims('min', axes, x.rank);
     const [outShape, reduceShape] =
         axis_util.computeOutAndReduceShapes(x.shape, axes);
@@ -553,7 +580,12 @@ export class MathBackendCPU implements MathBackend {
     return result;
   }
 
-  max<G extends keyof DataTypes>(x: NDArray<G>, axes: number[]): NDArray<G> {
+  minimum<D extends DataType>(a: NDArray<D>, b: NDArray<D>): NDArray<D> {
+    return this.broadcastedBinaryOp(
+        a, b, a.dtype, (aVal, bVal) => Math.min(aVal, bVal));
+  }
+
+  max<D extends DataType>(x: NDArray<D>, axes: number[]): NDArray<D> {
     axis_util.assertAxesAreInnerMostDims('max', axes, x.rank);
     const [outShape, reduceShape] =
         axis_util.computeOutAndReduceShapes(x.shape, axes);
@@ -578,6 +610,11 @@ export class MathBackendCPU implements MathBackend {
       vals[i] = max;
     }
     return result;
+  }
+
+  maximum<D extends DataType>(a: NDArray<D>, b: NDArray<D>): NDArray<D> {
+    return this.broadcastedBinaryOp(
+        a, b, a.dtype, (aVal, bVal) => Math.max(aVal, bVal));
   }
 
   ceil<T extends NDArray>(x: T): T {
@@ -761,6 +798,16 @@ export class MathBackendCPU implements MathBackend {
       resultValues[i] = Math.abs(values[i]);
     }
     return NDArray.make(x.shape, {values: resultValues}) as T;
+  }
+
+  int<R extends Rank>(x: NDArray<DataType, R>): NDArray<'int32', R> {
+    const resultValues = new Int32Array(x.size);
+    const values = x.dataSync();
+    for (let i = 0; i < values.length; ++i) {
+      resultValues[i] = values[i];
+    }
+    return NDArray.make(x.shape, {values: resultValues}, 'int32') as
+        NDArray<'int32', R>;
   }
 
   sigmoid<T extends NDArray>(x: T): T {
@@ -1047,8 +1094,7 @@ export class MathBackendCPU implements MathBackend {
     return y;
   }
 
-  tile<D extends keyof DataTypes, T extends NDArray<D>>(x: T, reps: number[]):
-      T {
+  tile<D extends DataType, T extends NDArray<D>>(x: T, reps: number[]): T {
     const newShape: number[] = new Array(x.rank);
     for (let i = 0; i < newShape.length; i++) {
       newShape[i] = x.shape[i] * reps[i];
@@ -1081,8 +1127,7 @@ export class MathBackendCPU implements MathBackend {
     return result;
   }
 
-  transpose<D extends keyof DataTypes, T extends NDArray<D>>(
-      x: T, perm: number[]): T {
+  transpose<D extends DataType, T extends NDArray<D>>(x: T, perm: number[]): T {
     const newShape: number[] = new Array(x.rank);
     for (let i = 0; i < newShape.length; i++) {
       newShape[i] = x.shape[perm[i]];
@@ -1352,11 +1397,11 @@ export class MathBackendCPU implements MathBackend {
       x: Array4D, mean: Array4D|Array1D, variance: Array4D|Array1D,
       varianceEpsilon: number, scale?: Array4D|Array1D,
       offset?: Array4D|Array1D): Array4D {
-    const xValues = x.getValues();
-    const meanValues = mean.getValues();
-    const varianceValues = variance.getValues();
-    const scaleValues = scale ? scale.getValues() : new Float32Array([1]);
-    const offsetValues = offset ? offset.getValues() : new Float32Array([0]);
+    const xValues = x.dataSync();
+    const meanValues = mean.dataSync();
+    const varianceValues = variance.dataSync();
+    const scaleValues = scale ? scale.dataSync() : new Float32Array([1]);
+    const offsetValues = offset ? offset.dataSync() : new Float32Array([0]);
     const outValues = new Float32Array(xValues.length);
 
     for (let i = 0; i < xValues.length; i++) {
@@ -1417,7 +1462,7 @@ export class MathBackendCPU implements MathBackend {
     return Array2D.new([indices.size, depth], res);
   }
 
-  private broadcastedBinaryOp<D extends keyof DataTypes>(
+  private broadcastedBinaryOp<D extends DataType>(
       a: NDArray, b: NDArray, dtype: D,
       op: (a: number, b: number) => number): NDArray<D> {
     const newShape =
@@ -1446,7 +1491,7 @@ export class MathBackendCPU implements MathBackend {
     return result;
   }
 
-  private ternaryOp<D extends keyof DataTypes>(
+  private ternaryOp<D extends DataType>(
       a: NDArray, b: NDArray, c: NDArray, dtype: D,
       op: (a: number, b: number, c: number) => number): NDArray<D> {
     util.assertShapesMatch(a.shape, b.shape);
@@ -1467,6 +1512,8 @@ export class MathBackendCPU implements MathBackend {
     }
     return result;
   }
+
+  dispose() {}
 }
 
 ENV.registerBackend('cpu', () => new MathBackendCPU());

@@ -1,4 +1,4 @@
-import {DataTypes} from '../../ndarray';
+import {DataType, DataTypeMap} from '../../ndarray';
 
 /**
  * @license
@@ -25,12 +25,13 @@ export enum TextureType {
 
 export interface TextureData {
   texture: WebGLTexture;
+  shape: number[];
   /** [rows, columns] shape of the texture. */
   texShape: [number, number];
   textureType: TextureType;
-  dtype: keyof DataTypes;
+  dtype: DataType;
   numChannels?: number;
-  values: DataTypes[keyof DataTypes];
+  values: DataTypeMap[DataType];
 }
 
 export function getUnpackedMatrixTextureShapeWidthHeight(
