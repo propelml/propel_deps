@@ -1,5 +1,22 @@
-import {NDArray} from '../ndarray';
+/**
+ * @license
+ * Copyright 2018 Google Inc. All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * =============================================================================
+ */
 
+import * as util from '../../util';
+import {DataType, NDArray, Scalar} from '../ndarray';
 import {MathBackend} from './backend';
 import {KernelInputConfig} from './tape_types';
 // tslint:disable-next-line:max-line-length
@@ -7,6 +24,7 @@ import {ArgMaxInputConfig, ArgMaxNode, ArgMinInputConfig, ArgMinNode} from './ty
 // tslint:disable-next-line:max-line-length
 import {BatchNorm2DInputConfig, BatchNorm2DNode, BatchNorm3DInputConfig, BatchNorm3DNode, BatchNorm4DInputConfig, BatchNorm4DNode} from './types/batchnorm';
 import {BinaryInputConfig, BinaryNode} from './types/binary';
+import {CastInputConfig, CastNode} from './types/cast';
 // tslint:disable-next-line:max-line-length
 import {Concat1DInputConfig, Concat1DNode, Concat2DInputConfig, Concat2DNode, Concat3DInputConfig, Concat3DNode, Concat4DInputConfig, Concat4DNode} from './types/concat';
 // tslint:disable-next-line:max-line-length
@@ -14,12 +32,14 @@ import {Conv2DDerBiasInputConfig, Conv2DDerBiasNode, Conv2DDerFilterInputConfig,
 import {EqualInputConfig, EqualNode, SelectInputConfig, SelectNode} from './types/logical';
 import {MatMulInputConfig, MatMulNode} from './types/matmul';
 // tslint:disable-next-line:max-line-length
-import {MaxInputConfig, MaxNode, MinInputConfig, MinNode} from './types/minmax';
+import {MaximumInputConfig, MaximumNode, MaxInputConfig, MaxNode, MinimumInputConfig, MinimumNode, MinInputConfig, MinNode} from './types/minmax';
 import {MultinomialInputConfig, MultinomialNode} from './types/multinomial';
 import {OneHotInputConfig, OneHotNode} from './types/onehot';
 // tslint:disable-next-line:max-line-length
 import {PoolBackpropInputConfig, PoolBackpropNode, PoolInputConfig, PoolNode} from './types/pool';
 import {PowInputConfig, PowNode} from './types/pow';
+import {PReLUInputConfig, PReLUNode} from './types/prelu';
+import {ReshapeNode} from './types/reshape';
 // tslint:disable-next-line:max-line-length
 import {ResizeBilinear3DInputConfig, ResizeBilinear3DNode} from './types/resize_bilinear';
 // tslint:disable-next-line:max-line-length
@@ -29,7 +49,6 @@ import {SumInputConfig, SumNode} from './types/sum';
 import {TopKIndicesInputConfig, TopKIndicesNode, TopKValuesInputConfig, TopKValuesNode} from './types/topk';
 // tslint:disable-next-line:max-line-length
 import {ClipInputConfig, ClipNode, LeakyReluInputConfig, LeakyReluNode, StepInputConfig, StepNode, TileInputConfig, TileNode, TransposeInputConfig, TransposeNode, UnaryInputConfig, UnaryNode} from './types/unary';
-import {PReLUNode, PReLUInputConfig} from './types/prelu';
 
 const KERNEL_METHODS: {
   [kernel in keyof KernelConfigRegistry]: (
@@ -99,6 +118,9 @@ const KERNEL_METHODS: {
   Equal: (backend: MathBackend, config: EqualInputConfig) => {
     return backend.equal(config.inputs.a, config.inputs.b);
   },
+  NotEqual: (backend: MathBackend, config: EqualInputConfig) => {
+    return backend.notEqual(config.inputs.a, config.inputs.b);
+  },
   Greater: (backend: MathBackend, config: EqualInputConfig) => {
     return backend.greater(config.inputs.a, config.inputs.b);
   },
@@ -121,16 +143,18 @@ const KERNEL_METHODS: {
   TopKIndices: (backend: MathBackend, config: TopKIndicesInputConfig) => {
     return backend.topKIndices(config.inputs.x, config.args.k);
   },
-  Min:
-      (backend: MathBackend,
-       config: MinInputConfig<'float32'|'int32'|'bool'>) => {
-        return backend.min(config.inputs.x, config.args.axes);
-      },
-  Max:
-      (backend: MathBackend,
-       config: MaxInputConfig<'float32'|'int32'|'bool'>) => {
-        return backend.max(config.inputs.x, config.args.axes);
-      },
+  Min: (backend: MathBackend, config: MinInputConfig<DataType>) => {
+    return backend.min(config.inputs.x, config.args.axes);
+  },
+  Minimum: (backend: MathBackend, config: MinimumInputConfig<DataType>) => {
+    return backend.minimum(config.inputs.a, config.inputs.b);
+  },
+  Max: (backend: MathBackend, config: MaxInputConfig<DataType>) => {
+    return backend.max(config.inputs.x, config.args.axes);
+  },
+  Maximum: (backend: MathBackend, config: MaximumInputConfig<DataType>) => {
+    return backend.maximum(config.inputs.a, config.inputs.b);
+  },
   Ceil: (backend: MathBackend, config: UnaryInputConfig<NDArray>) => {
     return backend.ceil(config.inputs.x);
   },
@@ -154,6 +178,27 @@ const KERNEL_METHODS: {
   },
   Relu: (backend: MathBackend, config: UnaryInputConfig<NDArray>) => {
     return backend.relu(config.inputs.x);
+  },
+  Reshape: (backend: MathBackend, config: UnaryInputConfig<NDArray>) => {
+    const x = config.inputs.x;
+    const newShape = config.args.newShape;
+    return NDArray.make(newShape, {dataId: x.dataId}, x.dtype);
+  },
+  Cast: (backend: MathBackend, config: CastInputConfig) => {
+    const x = config.inputs.x;
+    const newDType = config.args.newDType;
+
+    if (!util.hasEncodingLoss(x.dtype, newDType)) {
+      // We don't change the underlying data, since we cast to higher precision.
+      return NDArray.make(x.shape, {dataId: x.dataId}, newDType);
+    }
+    if (newDType === 'int32') {
+      return backend.int(x);
+    } else if (newDType === 'bool') {
+      return backend.notEqual(x, Scalar.new(0, x.dtype));
+    } else {
+      throw new Error(`Error in Cast: unknown dtype argument (${newDType})`);
+    }
   },
   LeakyRelu: (backend: MathBackend, config: LeakyReluInputConfig<NDArray>) => {
     return backend.leakyRelu(config.inputs.x, config.args.alpha);
@@ -306,19 +351,22 @@ export interface KernelConfigRegistry {
   Sub: BinaryNode;
   Mul: BinaryNode;
   Div: BinaryNode;
-  Sum: SumNode<'float32'|'int32'|'bool'>;
+  Sum: SumNode<DataType>;
   ArgMax: ArgMaxNode;
   ArgMin: ArgMinNode;
   Equal: EqualNode;
+  NotEqual: EqualNode;
   Greater: EqualNode;
   GreaterEqual: EqualNode;
   Less: EqualNode;
   LessEqual: EqualNode;
   Select: SelectNode;
-  TopKValues: TopKValuesNode<'float32'|'int32'|'bool', NDArray>;
+  TopKValues: TopKValuesNode<DataType, NDArray>;
   TopKIndices: TopKIndicesNode;
-  Min: MinNode<'float32'|'int32'|'bool'>;
-  Max: MaxNode<'float32'|'int32'|'bool'>;
+  Min: MinNode<DataType>;
+  Minimum: MinimumNode<DataType>;
+  Max: MaxNode<DataType>;
+  Maximum: MaximumNode<DataType>;
   Ceil: UnaryNode<NDArray>;
   Floor: UnaryNode<NDArray>;
   Pow: PowNode<NDArray>;
@@ -330,6 +378,8 @@ export interface KernelConfigRegistry {
   LeakyRelu: LeakyReluNode<NDArray>;
   PReLU: PReLUNode<NDArray>;
   PReLUDer: PReLUNode<NDArray>;
+  Reshape: ReshapeNode;
+  Cast: CastNode;
   Elu: UnaryNode<NDArray>;
   EluDer: UnaryNode<NDArray>;
   Selu: UnaryNode<NDArray>;
