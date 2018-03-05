@@ -64,11 +64,9 @@ class JSAsset extends Asset {
     };
 
     // Check if there is a babel config file. If so, determine which parser plugins to enable
-    this.babelConfig =
-      (this.package && this.package.babel) ||
-      (await this.getConfig(['.babelrc', '.babelrc.js']));
+    this.babelConfig = await babel.getConfig(this);
     if (this.babelConfig) {
-      const file = new BabelFile({filename: this.name});
+      const file = new BabelFile(this.babelConfig);
       options.plugins.push(...file.parserOpts.plugins);
     }
 
@@ -77,7 +75,6 @@ class JSAsset extends Asset {
 
   async parse(code) {
     const options = await this.getParserOptions();
-
     return babylon.parse(code, options);
   }
 
@@ -90,7 +87,7 @@ class JSAsset extends Asset {
   }
 
   collectDependencies() {
-    this.traverseFast(collectDependencies);
+    walk.ancestor(this.ast, collectDependencies, this);
   }
 
   async pretransform() {
@@ -98,14 +95,16 @@ class JSAsset extends Asset {
   }
 
   async transform() {
-    if (this.dependencies.has('fs') && FS_RE.test(this.contents)) {
-      await this.parseIfNeeded();
-      this.traverse(fsVisitor);
-    }
+    if (this.options.target === 'browser') {
+      if (this.dependencies.has('fs') && FS_RE.test(this.contents)) {
+        await this.parseIfNeeded();
+        this.traverse(fsVisitor);
+      }
 
-    if (GLOBAL_RE.test(this.contents)) {
-      await this.parseIfNeeded();
-      walk.ancestor(this.ast, insertGlobals, this);
+      if (GLOBAL_RE.test(this.contents)) {
+        await this.parseIfNeeded();
+        walk.ancestor(this.ast, insertGlobals, this);
+      }
     }
 
     if (this.isES6Module) {
