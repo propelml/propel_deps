@@ -1,3 +1,12 @@
 .DS_Store
 package_lock.json
 /node_modules/puppeteer/.local-chromium/
+
+# Exclude vega-lite typings that import the 'vega' module, which we don't
+# have installed. If these files are left, this trips up typescript.
+/node_modules/vega-lite/build/src/aggregate.d.ts
+/node_modules/vega-lite/build/src/fielddef.d.ts
+/node_modules/vega-lite/build/src/log.d.ts
+/node_modules/vega-lite/build/src/sort.d.ts
+/node_modules/vega-lite/build/src/transform.d.ts
+/node_modules/vega-lite/build/src/vega.schema.d.ts
